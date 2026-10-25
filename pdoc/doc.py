@@ -1017,6 +1017,13 @@ class Function(Doc[types.FunctionType]):
                 [inspect.Parameter("unknown", inspect.Parameter.POSITIONAL_OR_KEYWORD)]
             )
         mod = inspect.getmodule(self.obj)
+        if mod is None:
+            # Some callables do not live in a real module. For example, the
+            # __new__ that typing.NamedTuple synthesizes runs in a throwaway
+            # "namedtuple_<Name>" module, so getmodule() finds nothing.
+            # Fall back to the module being documented so that annotations
+            # can still be resolved against its namespace.
+            mod = sys.modules.get(self.modulename)
         globalns = _safe_getattr(mod, "__dict__", {})
         localns = globalns
         for parent_cls_name in self.qualname.split(".")[:-1]:

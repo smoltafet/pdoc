@@ -186,3 +186,47 @@ def test_source_file_method():
     assert m.members["Foo"].members["a_cached_function"].source_file == (
         here / "testdata" / "demo_long.py"
     )
+
+
+def test_namedtuple_forward_ref_init_signature():
+    """Forward references in a NamedTuple's fields must resolve in the
+    synthesized __init__/__new__ signature as well (issue #765).
+
+    The __new__ that typing.NamedTuple generates lives in a throwaway
+    "namedtuple_<Name>" module, so inspect.getmodule() returns None for
+    it and annotations used to be evaluated against an empty namespace,
+    producing an "Import of <Name> failed" warning for every local type.
+    """
+    import sys
+    import types
+    import warnings
+
+    mod = types.ModuleType("namedtuple_fwd_ref_test")
+    code = """
+from __future__ import annotations
+from typing import NamedTuple
+
+
+class Foo(NamedTuple):
+    b: Bar
+
+
+class Bar:
+    pass
+"""
+    exec(compile(code, "namedtuple_fwd_ref_test.py", "exec"), mod.__dict__)
+    sys.modules[mod.__name__] = mod
+    try:
+        m = Module(mod)
+        foo = m.members["Foo"]
+        assert isinstance(foo, Class)
+        init = foo.members["__init__"]
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            sig = init.signature
+        assert caught == []
+        assert sig.parameters["b"].annotation is mod.Bar
+        # The field variable itself resolves, too.
+        assert foo.members["b"].annotation is mod.Bar
+    finally:
+        del sys.modules[mod.__name__]
